@@ -11,6 +11,7 @@ import { HopfBifurcationGenerator } from './templates/hopfBifurcation';
 import { LyapunovGenerator } from './templates/lyapunovFunctions';
 import { IndexTheoryGenerator } from './templates/indexTheory';
 import { HamiltonianGenerator } from './templates/hamiltonianSystems';
+import { InvariantManifoldsGenerator } from './templates/invariantManifolds';
 import { randomChoice, generateSeed, createRng, shuffle } from './utils/random';
 
 // Registry of all generators
@@ -25,15 +26,58 @@ const generators: QuestionGenerator[] = [
   new LyapunovGenerator(),
   new IndexTheoryGenerator(),
   new HamiltonianGenerator(),
+  new InvariantManifoldsGenerator(),
 ];
 
 // Track used question IDs to avoid repetition in a session
 let usedQuestionIds = new Set<string>();
 let usedPoolIndices = new Set<number>();
 
+// Track recently used generators to improve variety
+let recentlyUsedGenerators: string[] = [];
+const GENERATOR_COOLDOWN = 3; // Questions before generator returns to full weight
+
 export function resetUsedQuestions() {
   usedQuestionIds = new Set();
   usedPoolIndices = new Set();
+  recentlyUsedGenerators = [];
+}
+
+// Select generator with weighting to avoid repetition
+function selectGenerator(
+  rng: () => number,
+  available: QuestionGenerator[]
+): QuestionGenerator {
+  if (available.length <= 1) return available[0];
+
+  // Assign weights: recently used generators get lower weight
+  const weights = available.map((g) => {
+    const name = g.constructor.name;
+    const recentIndex = recentlyUsedGenerators.indexOf(name);
+    if (recentIndex === -1) return 1.0; // Not recently used
+    // More recent = lower weight (0.2 to 0.8)
+    return 0.2 + (0.6 * recentIndex) / GENERATOR_COOLDOWN;
+  });
+
+  // Weighted random selection
+  const totalWeight = weights.reduce((a, b) => a + b, 0);
+  let random = rng() * totalWeight;
+
+  for (let i = 0; i < available.length; i++) {
+    random -= weights[i];
+    if (random <= 0) {
+      // Track this generator
+      const name = available[i].constructor.name;
+      recentlyUsedGenerators = recentlyUsedGenerators.filter((n) => n !== name);
+      recentlyUsedGenerators.unshift(name);
+      if (recentlyUsedGenerators.length > GENERATOR_COOLDOWN) {
+        recentlyUsedGenerators.pop();
+      }
+      return available[i];
+    }
+  }
+
+  return available[available.length - 1];
 }
 
 // Find generators that can handle a given config
@@ -86,8 +130,9 @@ export function generateQuestion(options: GenerateOptions = {}): Question | null
   const types = options.types?.length ? options.types : Object.values(QuestionType) as QuestionType[];
   const diagramsOnly = options.diagramsOnly ?? false;
 
-  // If diagramsOnly, skip pool questions (they don't have diagrams) and filter generators
-  const usePool = !diagramsOnly && rng() < 0.3 && difficulties.includes(Difficulty.CONCEPTUAL);
+  // Only use pool if TRUE_FALSE is in the selected types (pool only has T/F questions)
+  const canUsePool = types.includes(QuestionType.TRUE_FALSE);
+  const usePool = canUsePool && !diagramsOnly && rng() < 0.3 && difficulties.includes(Difficulty.CONCEPTUAL);
 
   if (usePool) {
     // Try to get a pool question
@@ -124,7 +169,7 @@ export function generateQuestion(options: GenerateOptions = {}): Question | null
     }
 
     if (availableGenerators.length > 0) {
-      const generator = randomChoice(rng, availableGenerators);
+      const generator = selectGenerator(rng, availableGenerators);
       try {
         const question = generator.generate(config);
 
@@ -140,8 +185,8 @@ export function generateQuestion(options: GenerateOptions = {}): Question | null
     }
   }
 
-  // Fallback: try any pool question we haven't used (but not if diagramsOnly)
-  if (!diagramsOnly) {
+  // Fallback: try any pool question we haven't used (but only if TRUE_FALSE is allowed)
+  if (!diagramsOnly && canUsePool) {
     const allAvailablePool = trueFalsePool
       .map((q, i) => ({ question: q, index: i }))
       .filter(({ index }) => !usedPoolIndices.has(index))

@@ -39,6 +39,9 @@ export class LinearSystems2DGenerator extends BaseGenerator {
       this.questionIsStable,
       this.questionEigenvalueType,
       this.questionTraceAndDet,
+      this.questionDiscriminantSign,
+      this.questionParameterStability,
+      this.questionTraceDeterminantRegion,
     ];
 
     const variant = randomChoice(rng, variants);
@@ -234,6 +237,176 @@ export class LinearSystems2DGenerator extends BaseGenerator {
       explanation: askTrace
         ? `$\\text{tr}(A) = a_{11} + a_{22} = ${matrix[0][0]} + ${matrix[1][1]} = ${t}$`
         : `$\\det(A) = a_{11}a_{22} - a_{12}a_{21} = (${matrix[0][0]})(${matrix[1][1]}) - (${matrix[0][1]})(${matrix[1][0]}) = ${d}$`,
+      seed,
+    };
+  }
+
+  // NEW: Test discriminant understanding
+  private questionDiscriminantSign(
+    rng: () => number,
+    difficulty: Difficulty,
+    seed: number
+  ): MultipleChoiceQuestion {
+    const { matrix, type } = this.generateMatrix(rng);
+    const matrixLatex = formatMatrix(matrix);
+    const t = trace(matrix);
+    const d = det(matrix);
+    const disc = t * t - 4 * d;
+
+    const prompt = `For the matrix $A = ${matrixLatex}$, compute $\\Delta = \\text{tr}^2(A) - 4\\det(A)$ and determine the nature of eigenvalues.`;
+
+    const discSign = disc > 0 ? 'positive' : disc < 0 ? 'negative' : 'zero';
+    const eigenNature =
+      disc > 0
+        ? 'real and distinct'
+        : disc < 0
+          ? 'complex conjugate'
+          : 'real and repeated';
+
+    const correctAnswer = `$\\Delta ${disc > 0 ? '>' : disc < 0 ? '<' : '='} 0$, eigenvalues are ${eigenNature}`;
+
+    const options = shuffle(rng, [
+      '$\\Delta > 0$, eigenvalues are real and distinct',
+      '$\\Delta < 0$, eigenvalues are complex conjugate',
+      '$\\Delta = 0$, eigenvalues are real and repeated',
+      '$\\Delta > 0$, eigenvalues are complex conjugate',
+    ]);
+
+    return {
+      id: generateId(),
+      type: QuestionType.MULTIPLE_CHOICE,
+      topic: Topic.LINEAR_SYSTEMS_2D,
+      difficulty: Difficulty.MODERATE,
+      prompt,
+      options,
+      correctIndex: options.indexOf(correctAnswer),
+      explanation: `$\\text{tr}(A) = ${t}$, $\\det(A) = ${d}$.\n\n$\\Delta = ${t}^2 - 4(${d}) = ${t * t} - ${4 * d} = ${disc}$.\n\nSince $\\Delta ${disc > 0 ? '> 0' : disc < 0 ? '< 0' : '= 0'}$, eigenvalues are ${eigenNature}.`,
+      seed,
+    };
+  }
+
+  // NEW: Parameter stability conditions
+  private questionParameterStability(
+    rng: () => number,
+    difficulty: Difficulty,
+    seed: number
+  ): MultipleChoiceQuestion {
+    // Generate parameterized matrix problems
+    const templates = [
+      {
+        matrix: '\\begin{pmatrix} a & 1 \\\\ 0 & -2 \\end{pmatrix}',
+        question: 'For what values of $a$ is the origin asymptotically stable?',
+        correct: '$a < 0$',
+        wrong: ['$a > 0$', '$a < -2$', '$a > -2$'],
+        explanation:
+          'Eigenvalues are $\\lambda_1 = a$ and $\\lambda_2 = -2$. For asymptotic stability, both must have negative real parts. $\\lambda_2 = -2 < 0$ always. We need $\\lambda_1 = a < 0$.',
+      },
+      {
+        matrix: '\\begin{pmatrix} -1 & 0 \\\\ 0 & b \\end{pmatrix}',
+        question: 'For what values of $b$ is the origin asymptotically stable?',
+        correct: '$b < 0$',
+        wrong: ['$b > 0$', '$b < -1$', '$b > -1$'],
+        explanation:
+          'Eigenvalues are $\\lambda_1 = -1$ and $\\lambda_2 = b$. For asymptotic stability, both must be negative. $\\lambda_1 = -1 < 0$ always. We need $\\lambda_2 = b < 0$.',
+      },
+      {
+        matrix: '\\begin{pmatrix} -2 & 1 \\\\ 0 & a \\end{pmatrix}',
+        question: 'For what values of $a$ is the origin a saddle point?',
+        correct: '$a > 0$',
+        wrong: ['$a < 0$', '$a < -2$', '$a = 0$'],
+        explanation:
+          'Eigenvalues are $\\lambda_1 = -2$ and $\\lambda_2 = a$. For a saddle, eigenvalues must have opposite signs. Since $\\lambda_1 = -2 < 0$, we need $\\lambda_2 = a > 0$.',
+      },
+      {
+        matrix: '\\begin{pmatrix} a & -2 \\\\ 2 & a \\end{pmatrix}',
+        question: 'For what values of $a$ is the origin asymptotically stable?',
+        correct: '$a < 0$',
+        wrong: ['$a > 0$', '$|a| < 2$', '$a > 2$'],
+        explanation:
+          'This is a rotation matrix scaled by $a$ with $\\det = a^2 + 4 > 0$ always. Eigenvalues are $a \\pm 2i$ (complex). For stability, real part must be negative: $a < 0$.',
+      },
+    ];
+
+    const template = randomChoice(rng, templates);
+    const options = shuffle(rng, [template.correct, ...template.wrong]);
+
+    return {
+      id: generateId(),
+      type: QuestionType.MULTIPLE_CHOICE,
+      topic: Topic.LINEAR_SYSTEMS_2D,
+      difficulty: Difficulty.MODERATE,
+      prompt: `Consider the system $\\mathbf{x}' = A\\mathbf{x}$ with $A = ${template.matrix}$.\n\n${template.question}`,
+      options,
+      correctIndex: options.indexOf(template.correct),
+      explanation: template.explanation,
+      seed,
+    };
+  }
+
+  // NEW: Trace-determinant plane region identification
+  private questionTraceDeterminantRegion(
+    rng: () => number,
+    difficulty: Difficulty,
+    seed: number
+  ): MultipleChoiceQuestion {
+    const scenarios = [
+      {
+        condition: '$\\text{tr}(A) < 0$ and $\\det(A) > 0$ and $\\Delta > 0$',
+        result: 'Stable node',
+        explanation:
+          '$\\det > 0$ means eigenvalues have the same sign. $\\text{tr} < 0$ means their sum is negative, so both are negative. $\\Delta > 0$ means real distinct. Result: stable node.',
+      },
+      {
+        condition: '$\\text{tr}(A) > 0$ and $\\det(A) > 0$ and $\\Delta > 0$',
+        result: 'Unstable node',
+        explanation:
+          '$\\det > 0$ means eigenvalues have the same sign. $\\text{tr} > 0$ means their sum is positive, so both are positive. $\\Delta > 0$ means real distinct. Result: unstable node.',
+      },
+      {
+        condition: '$\\det(A) < 0$',
+        result: 'Saddle',
+        explanation:
+          '$\\det < 0$ means eigenvalues have opposite signs (one positive, one negative). This is the definition of a saddle point.',
+      },
+      {
+        condition: '$\\text{tr}(A) < 0$ and $\\det(A) > 0$ and $\\Delta < 0$',
+        result: 'Stable spiral',
+        explanation:
+          '$\\Delta < 0$ means complex eigenvalues. $\\det > 0$ confirms non-saddle. $\\text{tr} < 0$ means negative real part. Result: stable spiral.',
+      },
+      {
+        condition: '$\\text{tr}(A) = 0$ and $\\det(A) > 0$',
+        result: 'Center',
+        explanation:
+          '$\\text{tr} = 0$ means real part of eigenvalues is zero. $\\det > 0$ means they are purely imaginary (not zero). Result: center.',
+      },
+    ];
+
+    const scenario = randomChoice(rng, scenarios);
+
+    const prompt = `If a $2 \\times 2$ matrix $A$ satisfies ${scenario.condition}, then the equilibrium at the origin is a:`;
+
+    let options = [
+      'Stable node',
+      'Unstable node',
+      'Saddle',
+      'Stable spiral',
+      'Center',
+    ];
+
+    // Ensure correct answer is in the first 4, then shuffle
+    const otherOptions = options.filter((o) => o !== scenario.result);
+    const finalOptions = shuffle(rng, [scenario.result, ...otherOptions.slice(0, 3)]);
+
+    return {
+      id: generateId(),
+      type: QuestionType.MULTIPLE_CHOICE,
+      topic: Topic.EQUILIBRIUM_CLASSIFICATION,
+      difficulty: Difficulty.MODERATE,
+      prompt,
+      options: finalOptions,
+      correctIndex: finalOptions.indexOf(scenario.result),
+      explanation: scenario.explanation,
       seed,
     };
   }

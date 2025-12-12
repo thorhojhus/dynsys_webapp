@@ -72,10 +72,42 @@ const BIFURCATION_EQUATIONS: Record<BifurcationDiagramType, string> = {
   pitchfork_sub: "$x' = rx + x^3$",
 };
 
+// 2D system equations with their phase portrait types
+const SYSTEM_EQUATIONS: Array<{
+  equation: string;
+  portrait: PhasePortraitType;
+  description: string;
+}> = [
+  { equation: "$\\dot{x} = -x, \\; \\dot{y} = -2y$", portrait: 'stable_node', description: 'Both eigenvalues negative: -1, -2' },
+  { equation: "$\\dot{x} = x, \\; \\dot{y} = 2y$", portrait: 'unstable_node', description: 'Both eigenvalues positive: 1, 2' },
+  { equation: "$\\dot{x} = x, \\; \\dot{y} = -y$", portrait: 'saddle', description: 'Eigenvalues of opposite sign: 1, -1' },
+  { equation: "$\\dot{x} = -x - y, \\; \\dot{y} = x - y$", portrait: 'stable_spiral', description: 'Complex eigenvalues with negative real part' },
+  { equation: "$\\dot{x} = x - y, \\; \\dot{y} = x + y$", portrait: 'unstable_spiral', description: 'Complex eigenvalues with positive real part' },
+  { equation: "$\\dot{x} = -y, \\; \\dot{y} = x$", portrait: 'center', description: 'Purely imaginary eigenvalues: ±i' },
+  { equation: "$\\dot{x} = 2x - 3y, \\; \\dot{y} = 3x + 2y$", portrait: 'unstable_spiral', description: 'Matrix has trace 4 > 0, complex eigenvalues' },
+  { equation: "$\\dot{x} = -2x + y, \\; \\dot{y} = -y$", portrait: 'stable_node', description: 'Upper triangular, eigenvalues -2, -1' },
+  { equation: "$\\dot{x} = 3x, \\; \\dot{y} = -2y$", portrait: 'saddle', description: 'Diagonal matrix with opposite signs' },
+  { equation: "$\\dot{x} = -x + 2y, \\; \\dot{y} = -2x - y$", portrait: 'stable_spiral', description: 'Trace = -2 < 0, det = 5 > 0, complex eigenvalues' },
+];
+
+// Bifurcation characteristics for detailed matching
+const BIFURCATION_CHARACTERISTICS: Record<BifurcationDiagramType, string> = {
+  saddle_node: 'Two equilibria collide and disappear',
+  transcritical: 'Two equilibria exchange stability',
+  pitchfork_super: 'One equilibrium splits into three (stable outer branches)',
+  pitchfork_sub: 'One equilibrium splits into three (unstable outer branches)',
+};
+
 export class MatchingDiagramsGenerator extends BaseGenerator {
-  topics = [Topic.PHASE_PORTRAITS, Topic.EQUILIBRIUM_CLASSIFICATION];
+  topics = [
+    Topic.PHASE_PORTRAITS,
+    Topic.EQUILIBRIUM_CLASSIFICATION,
+    Topic.BIFURCATION_SADDLE_NODE,
+    Topic.BIFURCATION_TRANSCRITICAL,
+    Topic.BIFURCATION_PITCHFORK,
+  ];
   types = [QuestionType.MATCHING];
-  difficulties = [Difficulty.MODERATE];
+  difficulties = [Difficulty.LIGHT, Difficulty.MODERATE];
 
   generate(config: GeneratorConfig): Question {
     const seed = config.seed ?? Math.floor(Math.random() * 2147483647);
@@ -87,6 +119,9 @@ export class MatchingDiagramsGenerator extends BaseGenerator {
       this.matchPortraitsToStability,
       this.matchBifurcationsToNames,
       this.matchBifurcationsToEquations,
+      this.matchPortraitsToSystems,
+      this.matchBifurcationsToCharacteristics,
+      this.matchSystemsToDescriptions,
     ];
 
     const variant = randomChoice(rng, variants);
@@ -240,6 +275,116 @@ export class MatchingDiagramsGenerator extends BaseGenerator {
       rightItems,
       correctMapping,
       explanation: `The normal forms are: Saddle-node: $x' = r \\pm x^2$, Transcritical: $x' = rx - x^2$, Supercritical pitchfork: $x' = rx - x^3$, Subcritical pitchfork: $x' = rx + x^3$.`,
+      seed,
+    };
+  }
+
+  // NEW: Match phase portraits to 2D system equations (exam-style)
+  private matchPortraitsToSystems(
+    rng: () => number,
+    seed: number
+  ): MatchingQuestion {
+    // Select 4 systems with different portrait types
+    const shuffledSystems = shuffle(rng, [...SYSTEM_EQUATIONS]);
+    const usedPortraits = new Set<PhasePortraitType>();
+    const selectedSystems: typeof SYSTEM_EQUATIONS = [];
+
+    for (const sys of shuffledSystems) {
+      if (!usedPortraits.has(sys.portrait) && selectedSystems.length < 4) {
+        selectedSystems.push(sys);
+        usedPortraits.add(sys.portrait);
+      }
+    }
+
+    // Left items are diagrams, right items are equations
+    const leftItems = selectedSystems.map(s => `portrait:${s.portrait}`);
+    const rightItems = shuffle(rng, selectedSystems.map(s => s.equation));
+
+    const correctMapping = selectedSystems.map(s =>
+      rightItems.indexOf(s.equation)
+    );
+
+    return {
+      id: generateId(),
+      type: QuestionType.MATCHING,
+      topic: Topic.PHASE_PORTRAITS,
+      difficulty: Difficulty.MODERATE,
+      prompt: 'Match each phase portrait to the dynamical system that produces it:',
+      leftItems,
+      rightItems,
+      correctMapping,
+      explanation: selectedSystems.map(s =>
+        `${PORTRAIT_NAMES[s.portrait]}: ${s.equation} — ${s.description}`
+      ).join('\n\n'),
+      seed,
+    };
+  }
+
+  // NEW: Match bifurcation diagrams to their characteristics
+  private matchBifurcationsToCharacteristics(
+    rng: () => number,
+    seed: number
+  ): MatchingQuestion {
+    const selectedTypes = shuffle(rng, [...BIFURCATION_TYPES]);
+
+    const leftItems = selectedTypes.map(t => `bifurcation:${t}`);
+    const rightItems = shuffle(rng, selectedTypes.map(t => BIFURCATION_CHARACTERISTICS[t]));
+
+    const correctMapping = selectedTypes.map(t =>
+      rightItems.indexOf(BIFURCATION_CHARACTERISTICS[t])
+    );
+
+    return {
+      id: generateId(),
+      type: QuestionType.MATCHING,
+      topic: Topic.BIFURCATION_PITCHFORK,
+      difficulty: Difficulty.MODERATE,
+      prompt: 'Match each bifurcation diagram to the behavior it exhibits:',
+      leftItems,
+      rightItems,
+      correctMapping,
+      explanation: `Saddle-node: equilibria appear/disappear. Transcritical: equilibria exchange stability. Pitchfork: one equilibrium branches into three.`,
+      seed,
+    };
+  }
+
+  // NEW: Match system equations to eigenvalue descriptions
+  private matchSystemsToDescriptions(
+    rng: () => number,
+    seed: number
+  ): MatchingQuestion {
+    // Select 4 systems with different portrait types
+    const shuffledSystems = shuffle(rng, [...SYSTEM_EQUATIONS]);
+    const usedPortraits = new Set<PhasePortraitType>();
+    const selectedSystems: typeof SYSTEM_EQUATIONS = [];
+
+    for (const sys of shuffledSystems) {
+      if (!usedPortraits.has(sys.portrait) && selectedSystems.length < 4) {
+        selectedSystems.push(sys);
+        usedPortraits.add(sys.portrait);
+      }
+    }
+
+    // Left items are equations, right items are descriptions
+    const leftItems = selectedSystems.map(s => s.equation);
+    const rightItems = shuffle(rng, selectedSystems.map(s => PORTRAIT_NAMES[s.portrait]));
+
+    const correctMapping = selectedSystems.map(s =>
+      rightItems.indexOf(PORTRAIT_NAMES[s.portrait])
+    );
+
+    return {
+      id: generateId(),
+      type: QuestionType.MATCHING,
+      topic: Topic.EQUILIBRIUM_CLASSIFICATION,
+      difficulty: Difficulty.MODERATE,
+      prompt: 'Match each dynamical system to the type of equilibrium it has at the origin:',
+      leftItems,
+      rightItems,
+      correctMapping,
+      explanation: selectedSystems.map(s =>
+        `${s.equation} → ${PORTRAIT_NAMES[s.portrait]} (${s.description})`
+      ).join('\n\n'),
       seed,
     };
   }

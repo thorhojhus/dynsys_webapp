@@ -123,6 +123,9 @@ export class Stability1DGenerator extends BaseGenerator {
       this.questionHowManyUnstable,
       this.questionHowManyEquilibria,
       this.questionOriginStability,
+      this.questionWhichIsStable,
+      this.questionFindEquilibria,
+      this.questionSemistableIdentification,
     ];
 
     const variant = randomChoice(rng, variants);
@@ -240,6 +243,138 @@ export class Stability1DGenerator extends BaseGenerator {
       explanation: originInfo
         ? `At $x = 0$: $f'(0) = ${derivAtOrigin}$. ${derivAtOrigin < 0 ? 'Since $f\'(0) < 0$, the origin is asymptotically stable.' : derivAtOrigin > 0 ? 'Since $f\'(0) > 0$, the origin is unstable.' : 'Since $f\'(0) = 0$, the origin is non-hyperbolic and requires further analysis.'}`
         : `$f(0) = ${evaluatePolynomial(p, 0)} \\neq 0$, so the origin is not an equilibrium.`,
+      seed,
+    };
+  }
+
+  // NEW: Which equilibrium is stable?
+  private questionWhichIsStable(
+    p: Polynomial,
+    equilibria: EquilibriumInfo[],
+    systemLatex: string,
+    rng: () => number,
+    seed: number
+  ): MultipleChoiceQuestion {
+    const stableEqs = equilibria.filter((e) => e.stability === 'stable');
+
+    // Build options from equilibria values
+    const eqValues = equilibria.map((e) => e.x).sort((a, b) => a - b);
+    let options = eqValues.map((x) => `$x = ${x}$`);
+
+    // Add "None" option if needed
+    if (stableEqs.length === 0 || options.length < 4) {
+      options.push('None of them');
+    }
+
+    // Ensure exactly 4 options
+    while (options.length < 4) {
+      const fakeX = randomInt(rng, -5, 5);
+      if (!eqValues.includes(fakeX)) {
+        options.push(`$x = ${fakeX}$`);
+      }
+    }
+    options = shuffle(rng, options.slice(0, 4));
+
+    const correctAnswer = stableEqs.length > 0
+      ? `$x = ${stableEqs[0].x}$`
+      : 'None of them';
+
+    return {
+      id: generateId(),
+      type: QuestionType.MULTIPLE_CHOICE,
+      topic: Topic.STABILITY_1D,
+      difficulty: Difficulty.LIGHT,
+      prompt: `For the system $${systemLatex}$, which equilibrium point is asymptotically stable?`,
+      options,
+      correctIndex: options.indexOf(correctAnswer),
+      explanation: this.generateStabilityExplanation(p, equilibria, 'stable'),
+      seed,
+    };
+  }
+
+  // NEW: Find equilibria from factored form
+  private questionFindEquilibria(
+    p: Polynomial,
+    equilibria: EquilibriumInfo[],
+    systemLatex: string,
+    rng: () => number,
+    seed: number
+  ): MultipleChoiceQuestion {
+    // Generate a simpler factored form for this question
+    const a = randomInt(rng, 1, 3);
+    const b = randomInt(rng, 1, 3);
+    const sign = randomChoice(rng, [-1, 1]);
+
+    // x(x-a)(x+b) has roots at 0, a, -b
+    const factoredLatex = sign > 0
+      ? `x(x - ${a})(x + ${b})`
+      : `-x(x - ${a})(x + ${b})`;
+
+    const roots = [0, a, -b].sort((x, y) => x - y);
+    const correctAnswer = `$x = ${roots.join(', ')}$`;
+
+    // Generate wrong options
+    const wrongOptions = [
+      `$x = ${[0, a, b].sort((x, y) => x - y).join(', ')}$`,
+      `$x = ${[0, -a, -b].sort((x, y) => x - y).join(', ')}$`,
+      `$x = ${[a, -b].sort((x, y) => x - y).join(', ')}$`,
+    ];
+
+    const options = shuffle(rng, [correctAnswer, ...wrongOptions]);
+
+    return {
+      id: generateId(),
+      type: QuestionType.MULTIPLE_CHOICE,
+      topic: Topic.STABILITY_1D,
+      difficulty: Difficulty.LIGHT,
+      prompt: `Find all equilibrium points of the system $x' = ${factoredLatex}$.`,
+      options,
+      correctIndex: options.indexOf(correctAnswer),
+      explanation: `Setting $${factoredLatex} = 0$, we need $x = 0$, $x - ${a} = 0$ (giving $x = ${a}$), or $x + ${b} = 0$ (giving $x = ${-b}$). The equilibria are at $x = ${roots.join(', ')}$.`,
+      seed,
+    };
+  }
+
+  // NEW: Semistable identification
+  private questionSemistableIdentification(
+    p: Polynomial,
+    equilibria: EquilibriumInfo[],
+    systemLatex: string,
+    rng: () => number,
+    seed: number
+  ): MultipleChoiceQuestion {
+    // Create systems with semistable equilibria
+    const templates = [
+      { latex: 'x^2', root: 0, stability: 'semistable', explanation: 'At $x = 0$, $f\'(0) = 0$. Since $f(x) = x^2 \\geq 0$, trajectories flow right on both sides, making the origin semistable (stable from left, unstable from right).' },
+      { latex: '-x^2', root: 0, stability: 'semistable', explanation: 'At $x = 0$, $f\'(0) = 0$. Since $f(x) = -x^2 \\leq 0$, trajectories flow left on both sides, making the origin semistable (unstable from left, stable from right).' },
+      { latex: 'x^3', root: 0, stability: 'unstable', explanation: 'At $x = 0$, $f\'(0) = 0$. But $f(x) = x^3$ changes sign: negative for $x < 0$, positive for $x > 0$. Flow is away from origin on both sides, so it is unstable.' },
+      { latex: '-x^3', root: 0, stability: 'stable', explanation: 'At $x = 0$, $f\'(0) = 0$. But $f(x) = -x^3$ changes sign: positive for $x < 0$, negative for $x > 0$. Flow is toward origin on both sides, so it is asymptotically stable.' },
+    ];
+
+    const template = randomChoice(rng, templates);
+
+    const options = shuffle(rng, [
+      'Asymptotically stable',
+      'Unstable',
+      'Semistable',
+      'Cannot be determined from $f\'$',
+    ]);
+
+    const correctAnswer = template.stability === 'stable'
+      ? 'Asymptotically stable'
+      : template.stability === 'unstable'
+        ? 'Unstable'
+        : 'Semistable';
+
+    return {
+      id: generateId(),
+      type: QuestionType.MULTIPLE_CHOICE,
+      topic: Topic.STABILITY_1D,
+      difficulty: Difficulty.MODERATE,
+      prompt: `For the system $x' = ${template.latex}$, what is the stability of $x = ${template.root}$?`,
+      options,
+      correctIndex: options.indexOf(correctAnswer),
+      explanation: template.explanation,
       seed,
     };
   }

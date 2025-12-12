@@ -33,6 +33,8 @@ export class IndexTheoryGenerator extends BaseGenerator {
       this.questionIndexSum,
       this.questionIndexProperties,
       this.questionComputeIndex,
+      this.questionLimitCyclePossibility,
+      this.questionMinimumEquilibria,
     ];
 
     const variant = randomChoice(rng, variants);
@@ -270,6 +272,115 @@ export class IndexTheoryGenerator extends BaseGenerator {
       options,
       correctIndex,
       explanation: f.explanation,
+      seed,
+    };
+  }
+
+  // NEW: Can a limit cycle surround these equilibria?
+  private questionLimitCyclePossibility(
+    rng: () => number,
+    seed: number
+  ): MultipleChoiceQuestion {
+    const scenarios = [
+      {
+        config: 'two stable nodes',
+        indexSum: 2,
+        possible: false,
+        explanation: 'Index sum = 1 + 1 = 2. A limit cycle requires index = +1 inside, so this configuration cannot be surrounded by a limit cycle.',
+      },
+      {
+        config: 'one stable node and one saddle',
+        indexSum: 0,
+        possible: false,
+        explanation: 'Index sum = 1 + (-1) = 0. A limit cycle requires index = +1 inside, so this configuration cannot be surrounded by a limit cycle.',
+      },
+      {
+        config: 'one unstable focus',
+        indexSum: 1,
+        possible: true,
+        explanation: 'Index sum = +1. This is exactly what a limit cycle requires, so a limit cycle could surround this equilibrium.',
+      },
+      {
+        config: 'two stable nodes and one saddle',
+        indexSum: 1,
+        possible: true,
+        explanation: 'Index sum = 1 + 1 + (-1) = 1. This equals +1, so a limit cycle could surround these equilibria.',
+      },
+      {
+        config: 'three saddles',
+        indexSum: -3,
+        possible: false,
+        explanation: 'Index sum = -1 + (-1) + (-1) = -3. A limit cycle requires index = +1 inside, so this is impossible.',
+      },
+      {
+        config: 'one center',
+        indexSum: 1,
+        possible: true,
+        explanation: 'Index sum = +1. This matches the requirement for a limit cycle, though whether one actually exists depends on the specific system.',
+      },
+    ];
+
+    const s = randomChoice(rng, scenarios);
+
+    const options = shuffle(rng, [
+      'Yes, a limit cycle could surround them',
+      'No, the index sum is wrong',
+      'Only if they are all stable',
+      'Only in nonlinear systems',
+    ]);
+
+    const correctAnswer = s.possible
+      ? 'Yes, a limit cycle could surround them'
+      : 'No, the index sum is wrong';
+
+    return {
+      id: generateId(),
+      type: QuestionType.MULTIPLE_CHOICE,
+      topic: Topic.TOPOLOGICAL_INDEX,
+      difficulty: Difficulty.MODERATE,
+      prompt: `A region contains ${s.config}. Can a limit cycle surround all of them?`,
+      options,
+      correctIndex: options.indexOf(correctAnswer),
+      explanation: s.explanation,
+      seed,
+    };
+  }
+
+  // NEW: Minimum equilibria inside a limit cycle
+  private questionMinimumEquilibria(
+    rng: () => number,
+    seed: number
+  ): MultipleChoiceQuestion {
+    const questions = [
+      {
+        prompt: 'A limit cycle must contain at least how many equilibrium point(s) inside?',
+        correct: '1',
+        explanation: 'Since a limit cycle has index +1, and the sum of indices inside must equal +1, there must be at least one equilibrium. The minimum is one equilibrium with index +1 (a node, focus, or center).',
+      },
+      {
+        prompt: 'What is the minimum number of saddle points that a limit cycle can enclose?',
+        correct: '0',
+        explanation: 'A limit cycle can enclose zero saddles. For example, it could surround a single unstable focus (index +1) with no saddles.',
+      },
+      {
+        prompt: 'If a limit cycle encloses exactly two saddle points, what is the minimum number of nodes or foci it must also enclose?',
+        correct: '3',
+        explanation: 'Two saddles contribute index -2. To reach total index +1, we need +3 from nodes/foci. So at least 3 nodes or foci are required.',
+      },
+    ];
+
+    const q = randomChoice(rng, questions);
+    const options = shuffle(rng, ['0', '1', '2', '3']);
+
+    return {
+      id: generateId(),
+      type: QuestionType.MULTIPLE_CHOICE,
+      topic: Topic.TOPOLOGICAL_INDEX,
+      difficulty: Difficulty.MODERATE,
+      prompt: q.prompt,
+      options,
+      correctIndex: options.indexOf(q.correct),
+      explanation: q.explanation,
       seed,
     };
   }

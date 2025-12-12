@@ -74,6 +74,12 @@ export const usePracticeStore = create<PracticeState>((set, get) => ({
       isCorrect = answer === (currentQuestion as { correctAnswer: boolean }).correctAnswer;
     } else if (currentQuestion.type === 'multiple_choice') {
       isCorrect = answer === (currentQuestion as { correctIndex: number }).correctIndex;
+    } else if (currentQuestion.type === 'matching') {
+      const correctMapping = (currentQuestion as { correctMapping: number[] }).correctMapping;
+      const userMapping = answer as number[];
+      isCorrect = Array.isArray(userMapping) &&
+        userMapping.length === correctMapping.length &&
+        userMapping.every((val, idx) => val === correctMapping[idx]);
     }
 
     set({
